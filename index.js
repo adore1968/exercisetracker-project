@@ -54,9 +54,7 @@ app.get("/api/users", (req, res) => {
   });
 });
 
-app.post("/api/users/:_id/exercises", (req, res) => {
-  console.log(req.body);
-
+app.post("/api/users/:_id/exercises", async (req, res) => {
   let userId = req.params._id;
 
   exerciseObj = {
@@ -70,23 +68,23 @@ app.post("/api/users/:_id/exercises", (req, res) => {
     exerciseObj.date = req.body.date;
   }
 
-  let newExercise = new exerciseModel(exerciseObj);
-
-  userModel.findById(userId, (err, userFound) => {
-    if (err) console.log(err);
-
-    newExercise.save();
-    res.json({
+  try {
+    const userFound = await userModel.findById(userId);
+    const newExercise = new exerciseModel(exerciseObj);
+    const result = await newExercise.save();
+    return res.json({
       _id: userFound._id,
       username: userFound.username,
-      description: newExercise.description,
-      duration: newExercise.duration,
-      date: new Date(newExercise.date).toDateString(),
+      description: result.description,
+      duration: result.duration,
+      date: new Date(result.date).toDateString(),
     });
-  });
+  } catch (error) {
+    return res.json({ error: error.message });
+  }
 });
 
-app.get("/api/users/:_id/logs", (req, res) => {
+app.get("/api/users/:_id/logs", async (req, res) => {
   let fromParam = req.query.from;
   let toParam = req.query.to;
   let limitParam = req.query.limit;
@@ -95,45 +93,31 @@ app.get("/api/users/:_id/logs", (req, res) => {
   // If limit param exists set it to an integer
   limitParam = limitParam ? parseInt(limitParam) : limitParam;
 
-  userModel.findById(userId, (err, userFound) => {
-    if (err) return console.log(err);
-    console.log(userFound);
+  try {
+    const result = await userModel.findById(userId);
+    let queryObj = { userId };
 
-    let queryObj = {
-      userId: userId,
-    };
-    // If we have a date add date params to the query
-    if (fromParam || toParam) {
-      queryObj.date = {};
-      if (fromParam) {
-        queryObj.date["$gte"] = fromParam;
-      }
-      if (toParam) {
-        queryObj.date["$lte"] = toParam;
-      }
+    if (fromParam && toParam) {
+      queryObj.date = { $gte: fromParam, $lte: toParam };
     }
 
-    exerciseModel
-      .find(queryObj)
-      .limit(limitParam)
-      .exec((err, exercises) => {
-        if (err) return console.log(err);
+    let exercises = await exerciseModel.find(queryObj).limit(limitParam);
+    let resObj = { _id: result._id, username: result.username };
 
-        let resObj = { _id: userFound._id, username: userFound.username };
+    exercises = exercises.map((x) => {
+      return {
+        description: x.description,
+        duration: x.duration,
+        date: new Date(x.date).toDateString(),
+      };
+    });
 
-        exercises = exercises.map((x) => {
-          return {
-            description: x.description,
-            duration: x.duration,
-            date: new Date(x.date).toDateString(),
-          };
-        });
-        resObj.log = exercises;
-        resObj.count = exercises.length;
-
-        res.json(resObj);
-      });
-  });
+    resObj.log = exercises;
+    resObj.count = exercises.length;
+    return res.json(resObj);
+  } catch (error) {
+    return res.json({ error: error.message });
+  }
 });
 
 const listener = app.listen(process.env.PORT || 3000, () => {
